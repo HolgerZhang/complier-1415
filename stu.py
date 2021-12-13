@@ -10,7 +10,7 @@ class Student{
 	}
 		
 	def print_info(self){
-		print(name,age)
+		print(self.name,self.age)
 	}
 }
 

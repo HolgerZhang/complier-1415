@@ -96,6 +96,20 @@ class Number(_node):
         return f'Number({self._value})'
 
 
+class String(_node):
+    """
+    字符串节点，value为值
+    """
+
+    def __init__(self, data):
+        super(String, self).__init__(data)
+        self._data = 'string'
+        self._value = str(data[1:-1])
+
+    def __str__(self):
+        return f'String("{self._value}")'
+
+
 class ID(_node):
     """
     标识符节点，提供id表示标识符名称，value为值
@@ -125,7 +139,7 @@ class Terminal(_node):
 
     def __str__(self):
         s = str(self._data).replace('<=', '≤').replace('>=', '≥').replace('<', '＜').replace('>', '＞')
-        if s in ('{', '}', '(', ')', '[', ']', 'while', 'for', ',', ';', '='):
+        if s in ('{', '}', '(', ')', '[', ']', 'while', 'for', ',', ';', '=', 'class', 'def'):
             # 省略不必要的终结符，缩减树的规模
             return ''
         return f'[{s}]'
@@ -149,4 +163,4 @@ class NilType(object):
 
 
 NIL = NilType()  # 空值（初始化但未赋值的变量）
-__all__ = ['ID', 'Variable', 'NIL', 'NonTerminal', 'Number', 'Terminal']
+__all__ = ['ID', 'Variable', 'NIL', 'NonTerminal', 'Number', 'String', 'Terminal']

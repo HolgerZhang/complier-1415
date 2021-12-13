@@ -18,9 +18,52 @@ class Function:
         for k, v in zip(self.arg_names, args):
             etb[k] = v
         if DEBUG_MODE: print(etb)
-        tran = Translator(self.body, tb=env.var_table, extend_table=etb)
+        if env is None:
+            tran = Translator(self.body, extend_table=etb)
+        else:
+            tran = Translator(self.body, tb=env.var_table, extend_table=etb)
         ret = tran.translate()
-        return ret
+        return ret, tran
+
+
+class Class:
+    def __init__(self, name, funcs):
+        self.name = name
+        tran = Translator(funcs)
+        tran.translate()
+        self.functions = tran.var_table
+
+    def __repr__(self):
+        return f"<Class object '{self.name}'>"
+
+
+class PyObject:
+    def __init__(self, cls):
+        self.cls = cls
+        self.props = {}
+        self.props.update(self.cls.functions)
+
+    def __repr__(self):
+        address = hex(id(self))
+        return f"<PyObject {self.cls.name} at {address}>"
+
+    def constructor(self, args):
+        if self.cls.functions.get('__init__', None) is None:
+            assert len(args) == 0, "default constructor doesn't need argument(s)!"
+            return
+        _, tran = self.cls.functions['__init__'].exec(env=None, args=[self] + args)
+        for name, value in tran.var_table.items():
+            self.props[name] = value
+
+    def __getitem__(self, item):
+        assert isinstance(item, str)
+        if self.props.get(item, None) is None:
+            raise AttributeError(f"'{self.cls.name}' object has no attribute '{item}'")
+        return self.props[item]
+
+    def __setitem__(self, key, value):
+        assert isinstance(key, str)
+        self.props[key] = value
 
 
 class Translator:
@@ -28,10 +71,11 @@ class Translator:
     @staticmethod
     def get_value(tb, vid):
         name, sub = vid
+        if DEBUG_MODE: print(name, sub)
         if not isinstance(name, tuple):
             if sub is None:
                 return tb[name]
-            return tb.get[name][sub]
+            return tb[name][sub]
         if sub is None:
             return Translator.get_value(tb, name)
         return Translator.get_value(tb, name)[sub]
@@ -72,7 +116,7 @@ class Translator:
     def translate(self):
         if self.break_flag or self.return_flag:
             return self.return_value
-        # 提前翻译 if for while function
+        # 提前翻译 if for while function class
         if isinstance(self._tree, NonTerminal):
             # Function
             if self._tree.type == 'Function':
@@ -109,6 +153,21 @@ class Translator:
                     body = self._tree.child(5)
                 func = Function(name, args, body)
                 self.var_table[name] = func
+                return self.return_value
+            # Class
+            elif self._tree.type == 'Class':
+                """class : CLASS ID LBRACE functions RBRACE"""
+                assert len(self._tree.children) == 5 and \
+                       isinstance(self._tree.child(0), Terminal) and self._tree.child(0).text == 'class' and \
+                       isinstance(self._tree.child(1), ID) and \
+                       isinstance(self._tree.child(2), Terminal) and self._tree.child(2).text == '{' and \
+                       isinstance(self._tree.child(3), NonTerminal) and self._tree.child(3).type == 'Functions' and \
+                       isinstance(self._tree.child(4), Terminal) and \
+                       self._tree.child(4).text == '}', 'Syntax error'
+                name = self._tree.child(1).id
+                body = self._tree.child(3)
+                cls = Class(name, body)
+                self.var_table[name] = cls
                 return self.return_value
             # If
             elif self._tree.type == 'If':
@@ -350,8 +409,8 @@ class Translator:
                     if DEBUG_MODE: print('SelfVar', self._tree.child(0).id, self._tree.child(1).text, value)
             # Variable
             elif self._tree.type == 'Variable':
-                """variable : variable LBRACKET expr RBRACKET | ID"""
-                assert len(self._tree.children) == 1 or len(self._tree.children) == 4, 'Syntax error'
+                """variable : variable LBRACKET expr RBRACKET | ID | ID DOT ID"""
+                assert len(self._tree.children) in (1, 3, 4), 'Syntax error'
                 if len(self._tree.children) == 1:
                     assert isinstance(self._tree.child(0), ID), 'Syntax error'
                     self._tree.id = (self._tree.child(0).id, None)
@@ -364,13 +423,20 @@ class Translator:
                            isinstance(self._tree.child(2), NonTerminal) and self._tree.child(2).type == 'Expr' and \
                            isinstance(self._tree.child(3), Terminal) and self._tree.child(3).text == ']', 'Syntax error'
                     self._tree.id = (self._tree.child(0).id, self._tree.child(2).value)
+                elif len(self._tree.children) == 3:
+                    assert isinstance(self._tree.child(0), ID) and \
+                           isinstance(self._tree.child(1), Terminal) and self._tree.child(1).text == '.' and \
+                           isinstance(self._tree.child(2), ID), 'Syntax error'
+                    obj_id = self._tree.child(0).id
+                    prop = self._tree.child(2).id
+                    self._tree.id = (obj_id, prop)
             # Expr
             elif self._tree.type == 'Expr':
-                '''expr : expr '+' term | expr '-' term | term | array'''
+                '''expr : expr '+' term | expr '-' term | term | array | string'''
                 assert len(self._tree.children) == 1 or len(self._tree.children) == 3, 'Syntax error'
                 if len(self._tree.children) == 1:
                     assert isinstance(self._tree.child(0), NonTerminal) and \
-                           self._tree.child(0).type in ('Term', 'Array'), 'Syntax error'
+                           self._tree.child(0).type in ('Term', 'Array', 'String'), 'Syntax error'
                     self._tree.value = self._tree.child(0).value
                 elif len(self._tree.children) == 3:
                     assert isinstance(self._tree.child(0), NonTerminal) and self._tree.child(0).type == 'Expr' and \
@@ -484,6 +550,11 @@ class Translator:
                     self._tree.value = list(self._tree.child(1).value)
                 else:
                     self._tree.value = []
+            # String
+            elif self._tree.type == 'String':
+                ''' string : STRING '''
+                assert len(self._tree.children) == 1 and isinstance(self._tree.child(0), String), 'Syntax error'
+                self._tree.value = self._tree.child(0).value
             # Condition
             elif self._tree.type == 'Condition':
                 """ condition : condition OR join | join """
@@ -572,22 +643,58 @@ class Translator:
                     self._tree.value = self._tree.child(0).value + [self._tree.child(2).id]
             # Call
             elif self._tree.type == 'Call':
-                """call : ID LPAREN exprs RPAREN | ID LPAREN RPAREN"""
-                assert (len(self._tree.children) == 4 and
-                        isinstance(self._tree.child(0), ID) and
-                        isinstance(self._tree.child(1), Terminal) and self._tree.child(1).text == '(' and
-                        isinstance(self._tree.child(2), NonTerminal) and self._tree.child(2).type == 'Exprs' and
-                        isinstance(self._tree.child(3), Terminal) and self._tree.child(3).text == ')') or \
-                       (len(self._tree.children) == 3 and
-                        isinstance(self._tree.child(0), ID) and
-                        isinstance(self._tree.child(1), Terminal) and self._tree.child(1).text == '(' and
-                        isinstance(self._tree.child(2), Terminal) and self._tree.child(2).text == ')'), 'Syntax error'
-                if len(self._tree.children) == 4:
-                    args = self._tree.child(2).value
-                else:
-                    args = []
-                # print(args)
-                func = self.var_table[self._tree.child(0).id]
-                self._tree.value = func.exec(self, args)
+                if 3 <= len(self._tree.children) <= 4:
+                    """call : ID LPAREN exprs RPAREN | ID LPAREN RPAREN"""
+                    assert (len(self._tree.children) == 4 and
+                            isinstance(self._tree.child(0), ID) and
+                            isinstance(self._tree.child(1), Terminal) and self._tree.child(1).text == '(' and
+                            isinstance(self._tree.child(2), NonTerminal) and self._tree.child(2).type == 'Exprs' and
+                            isinstance(self._tree.child(3), Terminal) and self._tree.child(3).text == ')') or \
+                           (len(self._tree.children) == 3 and
+                            isinstance(self._tree.child(0), ID) and
+                            isinstance(self._tree.child(1), Terminal) and self._tree.child(1).text == '(' and
+                            isinstance(self._tree.child(2), Terminal) and
+                            self._tree.child(2).text == ')'), 'Syntax error'
+                    if len(self._tree.children) == 4:
+                        args = self._tree.child(2).value
+                    else:
+                        args = []
+                    # print(args)
+                    func = self.get_value(self.var_table, (self._tree.child(0).id, None))
+                    if isinstance(func, Function):
+                        self._tree.value, _ = func.exec(self, args)
+                    else:
+                        obj = PyObject(func)
+                        obj.constructor(args=args)
+                        self._tree.value = obj
+                elif 5 <= len(self._tree.children) <= 6:
+                    """call : ID DOT ID LPAREN exprs RPAREN | ID DOT ID LPAREN RPAREN"""
+                    assert (len(self._tree.children) == 6 and
+                            isinstance(self._tree.child(0), ID) and
+                            isinstance(self._tree.child(1), Terminal) and self._tree.child(1).text == '.' and
+                            isinstance(self._tree.child(2), ID) and
+                            isinstance(self._tree.child(3), Terminal) and self._tree.child(3).text == '(' and
+                            isinstance(self._tree.child(4), NonTerminal) and self._tree.child(4).type == 'Exprs' and
+                            isinstance(self._tree.child(5), Terminal) and self._tree.child(5).text == ')') or \
+                           (len(self._tree.children) == 5 and
+                            isinstance(self._tree.child(0), ID) and
+                            isinstance(self._tree.child(1), Terminal) and self._tree.child(1).text == '.' and
+                            isinstance(self._tree.child(2), ID) and
+                            isinstance(self._tree.child(3), Terminal) and self._tree.child(3).text == '(' and
+                            isinstance(self._tree.child(4), Terminal) and
+                            self._tree.child(4).text == ')'), 'Syntax error'
+                    this = self.get_value(self.var_table, (self._tree.child(0).id, None))
+                    if len(self._tree.children) == 6:
+                        args = [this] + self._tree.child(4).value
+                    else:
+                        args = [this]
+                    # print(args)
+                    func = this[self._tree.child(2).id]
+                    if isinstance(func, Function):
+                        self._tree.value, _ = func.exec(self, args)
+                    else:
+                        obj = PyObject(func)
+                        obj.constructor(args=args)
+                        self._tree.value = obj
 
         return self.return_value

@@ -2,10 +2,10 @@
 语法：
 program : statements
 statements : statements statement | statement
-statement : assignment | expr | print | if | while | for | break | function | return
+statement : assignment | expr | print | if | while | for | break | function | return | class
 assignment : variable ASSIGN expr | variable MINEQUAL expr | variable PLUSEQUAL expr | variable DPLUS | variable DMINUS
-variable : variable LBRACKET expr RBRACKET | ID
-expr : expr PLUS term | expr MINUS term | term | array
+variable : variable LBRACKET expr RBRACKET | ID | ID DOT ID
+expr : expr PLUS term | expr MINUS term | term | array | string
 term : term TIMES factor | term DIVIDE factor | term EDIVIDE factor | factor
 factor : variable | NUMBER | len | call | LPAREN expr RPAREN
 exprs : exprs COMMA expr | expr
@@ -26,8 +26,11 @@ for : FOR LPAREN assignment SEMICOLON condition SEMICOLON assignment RPAREN LBRA
 break : BREAK
 function : DEF ID LPAREN args RPAREN LBRACE statements RBRACE | DEF ID LPAREN RPAREN LBRACE statements RBRACE
 args : args COMMA ID | ID
-call : ID LPAREN exprs RPAREN | ID LPAREN RPAREN
+call : ID LPAREN exprs RPAREN | ID LPAREN RPAREN | ID DOT ID LPAREN exprs RPAREN | ID DOT ID LPAREN RPAREN
 return : RETURN | RETURN exprs
+class : CLASS ID LBRACE functions RBRACE
+functions : functions function | function
+string : STRING
 """
 
 # coding=utf-8
@@ -69,6 +72,7 @@ def p_statement(t):
                   | for
                   | break
                   | function
+                  | class
                   | return"""
     if len(t) == 2:
         t[0] = NonTerminal('Statement')
@@ -94,10 +98,16 @@ def p_assignment(t):
 
 def p_variable(t):
     """variable : variable LBRACKET expr RBRACKET
+                | ID DOT ID
                 | ID"""
     if len(t) == 2:
         t[0] = Variable('Variable')
         t[0].add(ID(t[1]))
+    elif len(t) == 4:
+        t[0] = Variable('Variable')
+        t[0].add(ID(t[1]))
+        t[0].add(Terminal(t[2]))
+        t[0].add(ID(t[3]))
     elif len(t) == 5:
         t[0] = Variable('Variable')
         t[0].add(t[1])
@@ -110,6 +120,7 @@ def p_expr(t):
     """expr : expr PLUS term
             | expr MINUS term
             | term
+            | string
             | array"""
     if len(t) == 4:
         t[0] = NonTerminal('Expr')
@@ -379,18 +390,35 @@ def p_args(t):
 
 def p_call(t):
     """call : ID LPAREN exprs RPAREN
-            | ID LPAREN RPAREN"""
+            | ID LPAREN RPAREN
+            | ID DOT ID LPAREN exprs RPAREN
+            | ID DOT ID LPAREN RPAREN"""
     if len(t) == 5:
         t[0] = NonTerminal('Call')
         t[0].add(ID(t[1]))
         t[0].add(Terminal(t[2]))
         t[0].add(t[3])
         t[0].add(Terminal(t[4]))
-    elif len(t) == 3:
+    elif len(t) == 4:
         t[0] = NonTerminal('Call')
         t[0].add(ID(t[1]))
         t[0].add(Terminal(t[2]))
         t[0].add(Terminal(t[3]))
+    elif len(t) == 7:
+        t[0] = NonTerminal('Call')
+        t[0].add(ID(t[1]))
+        t[0].add(Terminal(t[2]))
+        t[0].add(ID(t[3]))
+        t[0].add(Terminal(t[4]))
+        t[0].add(t[5])
+        t[0].add(Terminal(t[6]))
+    elif len(t) == 6:
+        t[0] = NonTerminal('Call')
+        t[0].add(ID(t[1]))
+        t[0].add(Terminal(t[2]))
+        t[0].add(ID(t[3]))
+        t[0].add(Terminal(t[4]))
+        t[0].add(Terminal(t[5]))
 
 
 def p_return(t):
@@ -403,6 +431,36 @@ def p_return(t):
         t[0] = NonTerminal('Return')
         t[0].add(Terminal(t[1]))
         t[0].add(t[2])
+
+
+def p_class(t):
+    """class : CLASS ID LBRACE functions RBRACE"""
+    if len(t) == 6:
+        t[0] = NonTerminal('Class')
+        t[0].add(Terminal(t[1]))
+        t[0].add(ID(t[2]))
+        t[0].add(Terminal(t[3]))
+        t[0].add(t[4])
+        t[0].add(Terminal(t[5]))
+
+
+def p_functions(t):
+    """functions : functions function
+                 | function"""
+    if len(t) == 2:
+        t[0] = NonTerminal('Functions')
+        t[0].add(t[1])
+    elif len(t) == 3:
+        t[0] = NonTerminal('Functions')
+        t[0].add(t[1])
+        t[0].add(t[2])
+
+
+def p_string(t):
+    """string : STRING"""
+    if len(t) == 2:
+        t[0] = NonTerminal('String')
+        t[0].add(String(t[1]))
 
 
 def p_error(t):

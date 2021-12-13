@@ -18,10 +18,11 @@ reserved_words = {
     'or': 'OR',
     'def': 'DEF',
     'return': 'RETURN',
+    'class': 'CLASS',
 }
 tokens = ['NUMBER', 'PLUS', 'MINUS', 'TIMES', 'DIVIDE', 'LPAREN', 'RPAREN', 'LBRACKET', 'RBRACKET', 'ASSIGN',
           'LBRACE', 'RBRACE', 'SEMICOLON', 'COMMA', 'DPLUS', 'DMINUS', 'ID', 'EDIVIDE', 'MINEQUAL', 'PLUSEQUAL',
-          'LT', 'LE', 'GT', 'GE', 'EQ', 'NE', ] + list(reserved_words.values())
+          'LT', 'LE', 'GT', 'GE', 'EQ', 'NE', 'DOT', 'STRING', ] + list(reserved_words.values())
 
 # Define of tokens
 t_PLUSEQUAL = r'\+='
@@ -48,6 +49,26 @@ t_GT = r'>'
 t_GE = r'>='
 t_EQ = r'=='
 t_NE = r'!='
+t_DOT = r'\.'
+
+
+# 识别字符串，解决 "string" <token> "string" 情况下匹配不到两个字符串的问题
+def t_STRING(t):
+    r'".*"|\'.*\''
+    start, end = t.lexer.lexmatch.span()  # 匹配到的位置
+    quot = t.lexer.lexdata[start]
+    # 找到第一个结束引号的位置：除第一个引号外，首次出现的不在\字符后面的引号
+    for i in range(start, end + 1):
+        if t.lexer.lexdata[i] == quot:
+            if i == start:
+                continue
+            if t.lexer.lexdata[i - 1] == '\\':
+                continue
+            end = i
+            break
+    t.lexer.lexpos = end + 1  # 修改（提前）分析点
+    t.value = t.lexer.lexdata[start:end + 1]  # 修改数据
+    return t
 
 
 # 识别 ID，首先检查是否为保留字print，若是则申明其类型，否则为 ID
